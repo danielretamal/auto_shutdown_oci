@@ -21,6 +21,10 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       
+      # Flags de simulación y pruebas
+      - SIMULATE_OVER_BUDGET=${SIMULATE_OVER_BUDGET:-false}
+      - DRY_RUN=${DRY_RUN:-false}
+      
     # Alternativa si se prefiere montar el archivo de configuración físico de OCI:
     # volumes:
     #   - ~/.oci:/root/.oci:ro

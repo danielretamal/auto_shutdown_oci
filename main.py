@@ -113,12 +113,23 @@ def run_monitor():
                         budget_amount = b.amount
                         break
             
+            # Simulación forzada por entorno para pruebas
+            if os.environ.get("SIMULATE_OVER_BUDGET", "false").lower() in ("true", "1", "yes"):
+                print("  [SIMULACIÓN] Forzando estado de presupuesto superado...")
+                over_budget = True
+                if not budget_name:
+                    budget_name = "Presupuesto_Simulado"
+                    budget_amount = 10.0
+                    current_spend = 12.5
+            
             if over_budget:
                 print(f"  [ALERTA] Presupuesto superado (${current_spend} USD). Deteniendo esta instancia...")
                 
                 # Enviar mensaje a Telegram antes de apagar
+                dry_run = os.environ.get("DRY_RUN", "false").lower() in ("true", "1", "yes")
+                tag_dry = " (SIMULACIÓN - DRY RUN)" if dry_run else ""
                 msg = (
-                    f"⚠️ <b>[ALERTA OCI] Presupuesto Superado</b>\n\n"
+                    f"⚠️ <b>[ALERTA OCI] Presupuesto Superado{tag_dry}</b>\n\n"
                     f"El presupuesto <b>{budget_name}</b> (${budget_amount} USD) ha sido alcanzado o superado.\n"
                     f"<b>Consumo actual:</b> ${current_spend} USD\n"
                     f"<b>Instancia OCID:</b> <code>{instance_id or 'No detectada'}</code>\n\n"
@@ -127,8 +138,11 @@ def run_monitor():
                 send_telegram_message(msg)
 
                 if instance_id:
-                    print(f"  [APAGANDO] Deteniendo instancia {instance_id} vía API OCI...")
-                    compute_client.instance_action(instance_id=instance_id, action="STOP")
+                    if dry_run:
+                        print(f"  [DRY RUN] Detención simulada (no se apagará el VPS real) para la instancia {instance_id}.")
+                    else:
+                        print(f"  [APAGANDO] Deteniendo instancia {instance_id} vía API OCI...")
+                        compute_client.instance_action(instance_id=instance_id, action="STOP")
                 else:
                     print("  [ERROR] No se puede apagar la instancia porque no se conoce su OCID.")
             else:

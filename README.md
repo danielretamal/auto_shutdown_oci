@@ -1,30 +1,48 @@
 # OCI Auto-Shutdown Agent
 
-Agente ultraligero empaquetado en Docker diseñado para ejecutarse en instancias individuales de Oracle Cloud (OCI). 
-Monitorea de forma periódica el presupuesto de la Tenancy en la que reside y, si detecta que se ha superado el tope asignado, se auto-apaga a nivel de infraestructura OCI.
+An ultra-lightweight Docker-packaged agent designed to run on individual Oracle Cloud Infrastructure (OCI) instances. It periodically monitors the tenancy budget and gracefully auto-stops the virtual instance at the OCI infrastructure level if spending limits are exceeded.
 
-## Características
+## Features
 
-* **Ultraligero**: Construido sobre Python Alpine (peso mínimo en RAM y almacenamiento).
-* **Seguro y Autónomo**: Obtiene su propio `Instance OCID` localmente a través del servicio de metadatos de OCI (`192.0.0.192`), por lo que no es necesario configurarle manualmente el ID de la máquina donde corre.
-* **Apagado Limpio**: Utiliza la acción `STOP` del SDK de OCI, lo que realiza un apagado del sistema operativo de manera ordenada en la instancia.
+* **Ultra-lightweight**: Built on Python Alpine (minimal RAM and disk footprints).
+* **Autonomous & Safe**: Automatically retrieves its own `Instance OCID` locally from the OCI Metadata Service (`192.0.0.192`), eliminating the need to manually configure the instance ID.
+* **Clean Shutdown**: Utilizes the OCI SDK `STOP` instance action, which initiates a clean OS-level shutdown of the instance.
+* **Telegram Alerts**: Sends rich notifications to a Telegram chat before executing the shutdown.
+* **Safe Testing Mode**: Includes `DRY_RUN` and `SIMULATE_OVER_BUDGET` flags to verify the integration and Telegram alerts without actually shutting down the server.
 
-## Despliegue en la Instancia
+## Deployment
 
-1. Clona o copia esta carpeta en la máquina VPS de OCI que deseas auto-proteger.
-2. Edita las variables de entorno en el archivo `docker-compose.yml` con tus credenciales de API de OCI correspondientes a la cuenta:
-   * `OCI_USER`
-   * `OCI_TENANCY`
-   * `OCI_FINGERPRINT`
-   * `OCI_REGION`
-   * `OCI_KEY_CONTENT` (El texto de tu archivo `.pem` en una sola línea, usando `\n` para los saltos de línea).
-   * `TELEGRAM_BOT_TOKEN` (Opcional: Token del bot de Telegram para alertas).
-   * `TELEGRAM_CHAT_ID` (Opcional: ID de chat de Telegram donde enviar el reporte).
-3. Levanta el contenedor:
+1. Clone or copy this directory onto the OCI VPS instance you want to protect.
+2. Configure the environment variables in a `.env` file or directly inside `docker-compose.yml` with your OCI API credentials:
+   * `OCI_USER`: User OCID.
+   * `OCI_TENANCY`: Tenancy OCID.
+   * `OCI_FINGERPRINT`: OCI key fingerprint.
+   * `OCI_REGION`: OCI Region (e.g., `sa-valparaiso-1`).
+   * `OCI_KEY_CONTENT`: The contents of your API PEM private key in a single line (replacing actual newlines with `\n` characters).
+   * `OCI_INSTANCE_ID`: (Optional) Manual fallback instance OCID if the metadata service is unreachable.
+   * `TELEGRAM_BOT_TOKEN`: (Optional) Telegram Bot API token.
+   * `TELEGRAM_CHAT_ID`: (Optional) Telegram chat ID where alerts should be sent.
+   * `CHECK_INTERVAL`: Billing check interval in seconds (default is `1800` seconds / 30 minutes).
+3. Spin up the container:
    ```bash
    docker compose up -d --build
    ```
 
-El agente se ejecutará en segundo plano, revisando el estado de facturación cada 30 minutos por defecto (puedes ajustar `CHECK_INTERVAL` en segundos).
-Cuando se exceda el presupuesto, el agente enviará una notificación vía Telegram (si está configurada) justo antes de iniciar la detención del VPS.
+## Testing & Simulation
 
+To test that your OCI configuration and Telegram alerts are working properly without stopping your live server, configure these flags in your environment (e.g. `.env`):
+
+```env
+SIMULATE_OVER_BUDGET=true
+DRY_RUN=true
+```
+
+Then recreate the container (`docker compose up -d`). The agent will immediately trigger a mock overrun alert, dispatch the Telegram notification, and print a simulated shutdown message to the logs:
+
+```text
+[SIMULATION] Forcing budget overrun status...
+[ALERT] Budget exceeded ($12.5 USD). Stopping this instance...
+[INFO] Telegram notification sent successfully.
+[DRY RUN] Simulated shutdown (real VPS will not be stopped) for instance ...
+```
+Once verified, set both simulation flags to `false` and restart the container to return to normal active monitoring.

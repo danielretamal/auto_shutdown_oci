@@ -4,11 +4,11 @@ import time
 import requests
 import oci
 
-# Configuración del intervalo (por defecto 30 minutos)
+# Check interval configuration (default: 30 minutes)
 CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL", 1800))
 
 def get_instance_ocid():
-    """Obtiene el OCID de la propia instancia desde el servicio de metadatos de OCI."""
+    """Retrieves the OCID of the local instance from the OCI metadata service."""
     metadata_url = "http://192.0.0.192/opc/v2/instance/id"
     headers = {"Authorization": "Bearer Oracle"}
     try:
@@ -16,11 +16,11 @@ def get_instance_ocid():
         if response.status_code == 200:
             return response.text.strip()
     except Exception as e:
-        print(f"[ERROR] No se pudo obtener el OCID de la instancia desde los metadatos: {e}")
+        print(f"[ERROR] Could not retrieve instance OCID from metadata: {e}")
     return None
 
 def load_oci_config():
-    """Prepara la configuración de OCI basada en variables de entorno."""
+    """Prepares the OCI configuration based on environment variables."""
     user = os.environ.get("OCI_USER")
     tenancy = os.environ.get("OCI_TENANCY")
     fingerprint = os.environ.get("OCI_FINGERPRINT")
@@ -28,7 +28,7 @@ def load_oci_config():
     key_content = os.environ.get("OCI_KEY_CONTENT")
 
     if user and tenancy and fingerprint and key_content and region:
-        # Limpiar posibles comillas y reemplazar saltos de línea de forma robusta
+        # Clean potential quotes and replace newlines robustly
         pem_key = key_content.strip('"').strip("'").replace("\\\\n", "\n").replace("\\n", "\n")
         return {
             "user": user,
@@ -38,24 +38,24 @@ def load_oci_config():
             "key_content": pem_key
         }
     
-    # Alternativa: cargar de archivo ~/.oci/config montado en /root/.oci/config
+    # Alternative: load configuration from the mounted ~/.oci/config file
     default_config_path = "/root/.oci/config"
     if os.path.exists(default_config_path):
         try:
             profile = os.environ.get("OCI_PROFILE", "DEFAULT")
             return oci.config.from_file(default_config_path, profile)
         except Exception as e:
-            print(f"[ERROR] Error al cargar configuración desde {default_config_path}: {e}")
+            print(f"[ERROR] Error loading config from {default_config_path}: {e}")
             
-    print("[ERROR] Credenciales OCI no configuradas. Por favor provea las variables de entorno o monte el archivo de configuración.")
+    print("[ERROR] OCI credentials not configured. Please supply environment variables or mount a config file.")
     sys.exit(1)
 
 def send_telegram_message(message):
-    """Envía un mensaje de notificación a Telegram si los parámetros están configurados."""
+    """Sends a notification message to Telegram if credentials are configured."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        print("[WARNING] Telegram no configurado. Se omite el envío del mensaje.")
+        print("[WARNING] Telegram not configured. Skipping message dispatch.")
         return
     
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -67,26 +67,26 @@ def send_telegram_message(message):
     try:
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
-            print("[INFO] Notificación de Telegram enviada con éxito.")
+            print("[INFO] Telegram notification sent successfully.")
         else:
-            print(f"[ERROR] Error al enviar mensaje a Telegram: {response.text}")
+            print(f"[ERROR] Failed to send Telegram message: {response.text}")
     except Exception as e:
-        print(f"[ERROR] Excepción al enviar mensaje a Telegram: {e}")
+        print(f"[ERROR] Exception occurred while sending Telegram message: {e}")
 
 def run_monitor():
-    print("[INIT] Iniciando agente auto-shutdown ultraligero...")
+    print("[INIT] Starting lightweight auto-shutdown agent...")
     config = load_oci_config()
     
-    # Obtener OCID de la máquina actual
+    # Retrieve local instance OCID
     instance_id = get_instance_ocid()
     if not instance_id:
-        # Si no se puede obtener por metadatos (ej: pruebas locales), buscar variable
+        # Fallback to env variable if metadata service is not reachable (e.g. Docker bridge network)
         instance_id = os.environ.get("OCI_INSTANCE_ID")
         
     if not instance_id:
-        print("[WARNING] No se pudo determinar el OCID de esta instancia. El script solo advertirá pero no podrá apagar la máquina.")
+        print("[WARNING] Could not determine the OCID of this instance. The script will only warn but won't be able to stop the machine.")
     else:
-        print(f"[INIT] Instancia detectada: {instance_id}")
+        print(f"[INIT] Instance detected: {instance_id}")
 
     budget_client = oci.budget.BudgetClient(config)
     compute_client = oci.core.ComputeClient(config)
@@ -94,7 +94,7 @@ def run_monitor():
 
     while True:
         try:
-            print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Ejecutando revisión de presupuesto...")
+            print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Executing budget review...")
             budgets = budget_client.list_budgets(compartment_id=tenancy_id).data
             
             over_budget = False
@@ -105,7 +105,7 @@ def run_monitor():
             for b in budgets:
                 if b.lifecycle_state == "ACTIVE":
                     spend = b.actual_spend if b.actual_spend is not None else 0.0
-                    print(f"  Presupuesto '{b.display_name}': Consumido = ${spend} USD / Límite = ${b.amount} USD")
+                    print(f"  Budget '{b.display_name}': Spent = ${spend} USD / Limit = ${b.amount} USD")
                     if spend >= b.amount:
                         over_budget = True
                         current_spend = spend
@@ -113,47 +113,46 @@ def run_monitor():
                         budget_amount = b.amount
                         break
             
-            # Simulación forzada por entorno para pruebas
+            # Forced simulation flag for testing
             if os.environ.get("SIMULATE_OVER_BUDGET", "false").lower() in ("true", "1", "yes"):
-                print("  [SIMULACIÓN] Forzando estado de presupuesto superado...")
+                print("  [SIMULATION] Forcing budget overrun status...")
                 over_budget = True
                 if not budget_name:
-                    budget_name = "Presupuesto_Simulado"
+                    budget_name = "Simulated_Budget"
                     budget_amount = 10.0
                     current_spend = 12.5
             
             if over_budget:
-                print(f"  [ALERTA] Presupuesto superado (${current_spend} USD). Deteniendo esta instancia...")
+                print(f"  [ALERT] Budget exceeded (${current_spend} USD). Stopping this instance...")
                 
-                # Enviar mensaje a Telegram antes de apagar
+                # Send Telegram message before triggering shutdown
                 dry_run = os.environ.get("DRY_RUN", "false").lower() in ("true", "1", "yes")
-                tag_dry = " (SIMULACIÓN - DRY RUN)" if dry_run else ""
+                tag_dry = " (SIMULATION - DRY RUN)" if dry_run else ""
                 msg = (
-                    f"⚠️ <b>[ALERTA OCI] Presupuesto Superado{tag_dry}</b>\n\n"
-                    f"El presupuesto <b>{budget_name}</b> (${budget_amount} USD) ha sido alcanzado o superado.\n"
-                    f"<b>Consumo actual:</b> ${current_spend} USD\n"
-                    f"<b>Instancia OCID:</b> <code>{instance_id or 'No detectada'}</code>\n\n"
-                    f"🛑 Deteniendo el VPS ahora mismo para evitar cargos adicionales..."
+                    f"⚠️ <b>[OCI ALERT] Budget Exceeded{tag_dry}</b>\n\n"
+                    f"The budget <b>{budget_name}</b> (${budget_amount} USD) has been met or exceeded.\n"
+                    f"<b>Current spend:</b> ${current_spend} USD\n"
+                    f"<b>Instance OCID:</b> <code>{instance_id or 'Not detected'}</code>\n\n"
+                    f"🛑 Stopping the VPS immediately to prevent further charges..."
                 )
                 send_telegram_message(msg)
 
                 if instance_id:
                     if dry_run:
-                        print(f"  [DRY RUN] Detención simulada (no se apagará el VPS real) para la instancia {instance_id}.")
+                        print(f"  [DRY RUN] Simulated shutdown (real VPS will not be stopped) for instance {instance_id}.")
                     else:
-                        print(f"  [APAGANDO] Deteniendo instancia {instance_id} vía API OCI...")
+                        print(f"  [STOPPING] Stopping instance {instance_id} via OCI API...")
                         compute_client.instance_action(instance_id=instance_id, action="STOP")
                 else:
-                    print("  [ERROR] No se puede apagar la instancia porque no se conoce su OCID.")
+                    print("  [ERROR] Cannot stop the instance because its OCID is not known.")
             else:
-                print("  [OK] El consumo está dentro del límite de presupuesto.")
+                print("  [OK] Spend is within the budget limits.")
                 
         except Exception as e:
-            print(f"[ERROR] Error durante la revisión: {e}")
+            print(f"[ERROR] Error during review: {e}")
             
-        print(f"Esperando {CHECK_INTERVAL_SECONDS} segundos para el próximo chequeo...")
+        print(f"Waiting {CHECK_INTERVAL_SECONDS} seconds for the next check...")
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 if __name__ == "__main__":
     run_monitor()
-

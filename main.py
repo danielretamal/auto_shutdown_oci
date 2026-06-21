@@ -28,8 +28,8 @@ def load_oci_config():
     key_content = os.environ.get("OCI_KEY_CONTENT")
 
     if user and tenancy and fingerprint and key_content and region:
-        # Reemplazar saltos de línea literales en la llave PEM si vienen codificados
-        pem_key = key_content.replace("\\n", "\n")
+        # Limpiar posibles comillas y reemplazar saltos de línea de forma robusta
+        pem_key = key_content.strip('"').strip("'").replace("\\\\n", "\n").replace("\\n", "\n")
         return {
             "user": user,
             "tenancy": tenancy,

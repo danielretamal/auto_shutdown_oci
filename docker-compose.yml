@@ -24,6 +24,3 @@ services:
     # Alternativa si se prefiere montar el archivo de configuración físico de OCI:
     # volumes:
     #   - ~/.oci:/root/.oci:ro
-
-
-.

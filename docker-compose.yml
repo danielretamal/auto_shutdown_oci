@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  auto-shutdown:
+    build: .
+    container_name: oci_auto_shutdown
+    restart: unless-stopped
+    environment:
+      # Opciones de credenciales directas (Recomendado)
+      - OCI_USER=ocid1.user.oc1..aaaaaaaaxxxxxxx
+      - OCI_TENANCY=ocid1.tenancy.oc1..aaaaaaaaxxxxxxx
+      - OCI_FINGERPRINT=aa:bb:cc:dd:ee:ff:11:22:33:44:55:66:77:88:99:00
+      - OCI_REGION=sa-santiago-1
+      - OCI_KEY_CONTENT=-----BEGIN RSA PRIVATE KEY-----\nMIIEogIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----
+      
+      # Intervalo de chequeo en segundos (1800 = 30 minutos)
+      - CHECK_INTERVAL=1800
+      
+      # Configuración de notificaciones Telegram (Opcional)
+      - TELEGRAM_BOT_TOKEN=tu_bot_token_aquí
+      - TELEGRAM_CHAT_ID=tu_chat_id_aquí
+      
+    # Alternativa si se prefiere montar el archivo de configuración físico de OCI:
+    # volumes:
+    #   - ~/.oci:/root/.oci:ro
+

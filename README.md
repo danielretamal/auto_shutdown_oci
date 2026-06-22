@@ -1,4 +1,4 @@
-# Upgrading to the Instance Metadata Service v2
+# OCI Auto-Shutdown Agent
 
 An ultra-lightweight Docker-packaged agent that periodically monitors the OCI tenancy budget and gracefully auto-stops the virtual instance at the OCI infrastructure level if spending limits are exceeded.
 

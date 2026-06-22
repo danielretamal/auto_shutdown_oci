@@ -2,21 +2,28 @@ import os
 import sys
 import time
 import requests
-import oci
+
+LOCAL_TEST = os.environ.get("LOCAL_TEST_MODE", "false").lower() in ("true", "1", "yes")
+if not LOCAL_TEST:
+    import oci
+
+VERSION = "1.0"
 
 # Check interval configuration (default: 30 minutes)
 CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL", 1800))
 
-def get_instance_ocid():
-    """Retrieves the OCID of the local instance from the OCI metadata service."""
-    metadata_url = "http://192.0.0.192/opc/v2/instance/id"
+def get_metadata_value(path):
+    """Retrieves a specific field from the OCI metadata service trying standard IPs."""
+    ips = ["169.254.169.254", "192.0.0.192"]
     headers = {"Authorization": "Bearer Oracle"}
-    try:
-        response = requests.get(metadata_url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            return response.text.strip()
-    except Exception as e:
-        print(f"[ERROR] Could not retrieve instance OCID from metadata: {e}")
+    for ip in ips:
+        metadata_url = f"http://{ip}/opc/v2/instance/{path}"
+        try:
+            response = requests.get(metadata_url, headers=headers, timeout=3)
+            if response.status_code == 200:
+                return response.text.strip()
+        except Exception:
+            continue
     return None
 
 def load_oci_config():
@@ -26,6 +33,13 @@ def load_oci_config():
     fingerprint = os.environ.get("OCI_FINGERPRINT")
     region = os.environ.get("OCI_REGION")
     key_content = os.environ.get("OCI_KEY_CONTENT")
+
+    # If region is not provided, try to fetch it from metadata
+    if not region:
+        print("[INFO] OCI_REGION not provided in environment. Attempting to retrieve from IMDS...")
+        region = get_metadata_value("canonicalRegionName") or get_metadata_value("region")
+        if region:
+            print(f"[INFO] Auto-detected region from metadata: {region}")
 
     if user and tenancy and fingerprint and key_content and region:
         # Clean potential quotes and replace newlines robustly
@@ -74,19 +88,23 @@ def send_telegram_message(message):
         print(f"[ERROR] Exception occurred while sending Telegram message: {e}")
 
 def run_monitor():
-    print("[INIT] Starting lightweight auto-shutdown agent...")
+    print(f"[INIT] Starting lightweight auto-shutdown agent v{VERSION}...")
     config = load_oci_config()
     
-    # Retrieve local instance OCID
-    instance_id = get_instance_ocid()
+    # Retrieve local instance OCID and compartment ID
+    instance_id = get_metadata_value("id")
     if not instance_id:
-        # Fallback to env variable if metadata service is not reachable (e.g. Docker bridge network)
         instance_id = os.environ.get("OCI_INSTANCE_ID")
+        
+    compartment_id = get_metadata_value("compartmentId")
         
     if not instance_id:
         print("[WARNING] Could not determine the OCID of this instance. The script will only warn but won't be able to stop the machine.")
     else:
         print(f"[INIT] Instance detected: {instance_id}")
+
+    if compartment_id:
+        print(f"[INIT] Compartment detected: {compartment_id}")
 
     budget_client = oci.budget.BudgetClient(config)
     compute_client = oci.core.ComputeClient(config)
@@ -125,14 +143,16 @@ def run_monitor():
             if over_budget:
                 print(f"  [ALERT] Budget exceeded (${current_spend} USD). Stopping this instance...")
                 
-                # Send Telegram message before triggering shutdown
                 dry_run = os.environ.get("DRY_RUN", "false").lower() in ("true", "1", "yes")
                 tag_dry = " (SIMULATION - DRY RUN)" if dry_run else ""
+                
+                comp_text = f"<b>Compartment OCID:</b> <code>{compartment_id}</code>\n" if compartment_id else ""
                 msg = (
                     f"⚠️ <b>[OCI ALERT] Budget Exceeded{tag_dry}</b>\n\n"
                     f"The budget <b>{budget_name}</b> (${budget_amount} USD) has been met or exceeded.\n"
                     f"<b>Current spend:</b> ${current_spend} USD\n"
-                    f"<b>Instance OCID:</b> <code>{instance_id or 'Not detected'}</code>\n\n"
+                    f"<b>Instance OCID:</b> <code>{instance_id or 'Not detected'}</code>\n"
+                    f"{comp_text}\n"
                     f"🛑 Stopping the VPS immediately to prevent further charges..."
                 )
                 send_telegram_message(msg)
@@ -154,5 +174,26 @@ def run_monitor():
         print(f"Waiting {CHECK_INTERVAL_SECONDS} seconds for the next check...")
         time.sleep(CHECK_INTERVAL_SECONDS)
 
+def run_local_simulation():
+    """Simulate budget overrun locally without OCI credentials."""
+    print(f"[INIT] Local test mode v{VERSION} - simulating budget overrun...")
+    instance_id = os.environ.get("OCI_INSTANCE_ID", "unknown")
+    dry_run = os.environ.get("DRY_RUN", "true").lower() in ("true", "1", "yes")
+    tag_dry = " (SIMULATION - DRY RUN)" if dry_run else ""
+
+    msg = (
+        f"⚠️ <b>[OCI ALERT] Budget Exceeded{tag_dry}</b>\n\n"
+        f"The budget <b>Simulated_Budget</b> ($10.00 USD) has been met or exceeded.\n"
+        f"<b>Current spend:</b> $12.50 USD\n"
+        f"<b>Instance OCID:</b> <code>{instance_id}</code>\n"
+        f"<b>Version:</b> {VERSION}\n\n"
+        f"🛑 Stopping the VPS immediately to prevent further charges..."
+    )
+    send_telegram_message(msg)
+    print(f"  [DRY RUN] Simulated shutdown (real VPS will not be stopped) for instance {instance_id}.")
+
 if __name__ == "__main__":
-    run_monitor()
+    if LOCAL_TEST:
+        run_local_simulation()
+    else:
+        run_monitor()

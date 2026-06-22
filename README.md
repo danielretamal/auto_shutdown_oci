@@ -1,6 +1,6 @@
-# OCI Auto-Shutdown Agent
+# Upgrading to the Instance Metadata Service v2
 
-An ultra-lightweight Docker-packaged agent designed to run on individual Oracle Cloud Infrastructure (OCI) instances. It periodically monitors the tenancy budget and gracefully auto-stops the virtual instance at the OCI infrastructure level if spending limits are exceeded.
+An ultra-lightweight Docker-packaged agent that periodically monitors the OCI tenancy budget and gracefully auto-stops the virtual instance at the OCI infrastructure level if spending limits are exceeded.
 
 ## Features
 
@@ -17,12 +17,16 @@ An ultra-lightweight Docker-packaged agent designed to run on individual Oracle 
    * `OCI_USER`: User OCID.
    * `OCI_TENANCY`: Tenancy OCID.
    * `OCI_FINGERPRINT`: OCI key fingerprint.
-   * `OCI_REGION`: OCI Region (e.g., `sa-valparaiso-1`).
+   * `OCI_REGION`: (Optional) OCI Region (e.g., `sa-valparaiso-1`). If not provided, it is automatically resolved from the metadata service.
    * `OCI_KEY_CONTENT`: The contents of your API PEM private key in a single line (replacing actual newlines with `\n` characters).
-   * `OCI_INSTANCE_ID`: (Optional) Manual fallback instance OCID if the metadata service is unreachable.
+   * `OCI_INSTANCE_ID`: (Optional) Manual fallback instance OCID if the metadata service is unreachable (e.g., in closed Docker bridge networks).
    * `TELEGRAM_BOT_TOKEN`: (Optional) Telegram Bot API token.
    * `TELEGRAM_CHAT_ID`: (Optional) Telegram chat ID where alerts should be sent.
    * `CHECK_INTERVAL`: Billing check interval in seconds (default is `1800` seconds / 30 minutes).
+
+   > [!TIP]
+   > If the metadata service is unreachable from within the Docker container, you can add `network_mode: "host"` to the service configuration in `docker-compose.yml` to allow direct access to the link-local metadata endpoints (`169.254.169.254` and `192.0.0.192`).
+
 3. Spin up the container:
    ```bash
    docker compose up -d --build

@@ -5,8 +5,9 @@ services:
     build: .
     container_name: oci_auto_shutdown
     restart: unless-stopped
+    # network_mode: "host" # Uncomment if the container cannot reach the metadata IP (169.254.169.254)
     environment:
-      # Opciones de credenciales cargadas desde archivo .env
+      # Credential options loaded from .env file
       - OCI_USER=${OCI_USER}
       - OCI_TENANCY=${OCI_TENANCY}
       - OCI_FINGERPRINT=${OCI_FINGERPRINT}
@@ -14,17 +15,17 @@ services:
       - OCI_KEY_CONTENT=${OCI_KEY_CONTENT}
       - OCI_INSTANCE_ID=${OCI_INSTANCE_ID}
       
-      # Intervalo de chequeo en segundos (1800 = 30 minutos)
+      # Check interval in seconds (1800 = 30 minutes)
       - CHECK_INTERVAL=${CHECK_INTERVAL:-1800}
       
-      # Configuración de notificaciones Telegram (Opcional)
+      # Telegram notification settings (Optional)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       
-      # Flags de simulación y pruebas
+      # Simulation and testing flags
       - SIMULATE_OVER_BUDGET=${SIMULATE_OVER_BUDGET:-false}
       - DRY_RUN=${DRY_RUN:-false}
       
-    # Alternativa si se prefiere montar el archivo de configuración físico de OCI:
+    # Alternative: mount the physical OCI config file instead:
     # volumes:
     #   - ~/.oci:/root/.oci:ro
